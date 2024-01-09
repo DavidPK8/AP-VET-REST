@@ -4,6 +4,10 @@ Estructura de directorios y archivos
 
 ![image](https://github.com/DavidPK8/AP-VET-REST/assets/127541791/856041df-6a53-452c-ac1b-9ba69000a8db)
 
+Configuracion a ESModules
+
+![image](https://github.com/DavidPK8/AP-VET-REST/assets/127541791/73d384ab-3880-4a5e-8c71-0e3d24475637)
+
 Conexion a BDD y localhost
 
 ![image](https://github.com/DavidPK8/AP-VET-REST/assets/127541791/f482c8b4-efb2-4f04-a5ac-d131414d522f)
