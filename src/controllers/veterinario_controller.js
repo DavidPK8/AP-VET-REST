@@ -1,13 +1,38 @@
-import Veterinario from "../models/veterinario.js"
+import Veterinario from "../models/Veterinario.js"
+import { sendMailToUser, sendMailToRecoveryPassword } from "../config/nodemailer.js"
+import generarJWT from "../helpers/crearJWT.js"
+import mongoose from "mongoose";
 
 // Metodo para login
-const login =(req,res)=>{
-    res.status(200).json({res:'login del veterinario'})
+const login = async(req,res)=>{
+    const {email,password} = req.body
+    if (Object.values(req.body).includes("")) return res.status(404).json({msg:"Lo sentimos, debes llenar todos los campos"})
+    const veterinarioBDD = await Veterinario.findOne({email}).select("-status -__v -token -updatedAt -createdAt")
+    if(veterinarioBDD?.confirmEmail===false) return res.status(403).json({msg:"Lo sentimos, debe verificar su cuenta"})
+    if(!veterinarioBDD) return res.status(404).json({msg:"Lo sentimos, el usuario no se encuentra registrado"})
+    const verificarPassword = await veterinarioBDD.matchPassword(password)
+    if(!verificarPassword) return res.status(404).json({msg:"Lo sentimos, el password no es el correcto"})
+    const token = generarJWT(veterinarioBDD._id,"veterinario")
+    const {nombre,apellido,direccion,telefono,_id} = veterinarioBDD
+    res.status(200).json({
+        token,
+        nombre,
+        apellido,
+        direccion,
+        telefono,
+        _id,
+        email:veterinarioBDD.email
+    })
 }
 
 // Metodo para mostrar el perfil 
-const perfil=(req,res)=>{
-    res.status(200).json({res:'perfil del veterinario'})
+const perfil =(req,res)=>{
+    delete req.veterinarioBDD.token
+    delete req.veterinarioBDD.confirmEmail
+    delete req.veterinarioBDD.createdAt
+    delete req.veterinarioBDD.updatedAt
+    delete req.veterinarioBDD.__v
+    res.status(200).json(req.veterinarioBDD)
 }
 
 // Metodo para el registro
@@ -25,16 +50,24 @@ const registro = async (req,res)=>{
     // Encryptar el password
     nuevoVeterinario.password = await nuevoVeterinario.encrypPassword(password)
     // Crear un token
-    nuevoVeterinario.crearToken()
-    // Guardar en BDD
+    const token = nuevoVeterinario.crearToken()
+    // Invocar la funcion para enviar el correo
+    await sendMailToUser(email,token)
+    // Guardar en la BDD
     await nuevoVeterinario.save()
-    // Responder
-    res.status(200).json({nuevoVeterinario})
+    // Imprimir el mensaje
+    res.status(200).json({msg:"Revisa tu correo electrónico para confirmar tu cuenta"})
 }
 
 // Metodo para confirmar el token
-const confirmEmail = (req,res)=>{
-    res.status(200).json({res:'confirmar email de registro de veterinario'})
+const confirmEmail = async (req,res)=>{
+    if(!(req.params.token)) return res.status(400).json({msg:"Lo sentimos, no se puede validar la cuenta"})
+    const veterinarioBDD = await Veterinario.findOne({token:req.params.token})
+    if(!veterinarioBDD?.token) return res.status(404).json({msg:"La cuenta ya ha sido confirmada"})
+    veterinarioBDD.token = null
+    veterinarioBDD.confirmEmail=true
+    await veterinarioBDD.save()
+    res.status(200).json({msg:"Token confirmado, ya puedes iniciar sesión"}) 
 }
 
 // Metodo para listar veterinarios
@@ -43,33 +76,82 @@ const listarVeterinarios = (req,res)=>{
 }
 
 // Metodo para ver el detalle de veterinarios registrados
-const detalleVeterinario = (req,res)=>{
-    res.status(200).json({res:'detalle de un veterinario registrado'})
+const detalleVeterinario = async(req,res)=>{
+    const {id} = req.params
+    if( !mongoose.Types.ObjectId.isValid(id) ) return res.status(404).json({msg:`Lo sentimos, debe ser un id válido`});
+    const veterinarioBDD = await Veterinario.findById(id).select("-password")
+    if(!veterinarioBDD) return res.status(404).json({msg:`Lo sentimos, no existe el veterinario ${id}`})
+    res.status(200).json({msg:veterinarioBDD})
 }
 
 // Metodo para actualizar el perfil del veterinario
-const actualizarPerfil = (req,res)=>{
-    res.status(200).json({res:'actualizar perfil de un veterinario registrado'})
+const actualizarPerfil = async (req,res)=>{
+    const {id} = req.params
+    if( !mongoose.Types.ObjectId.isValid(id) ) return res.status(404).json({msg:`Lo sentimos, debe ser un id válido`});
+    if (Object.values(req.body).includes("")) return res.status(400).json({msg:"Lo sentimos, debes llenar todos los campos"})
+    const veterinarioBDD = await Veterinario.findById(id)
+    if(!veterinarioBDD) return res.status(404).json({msg:`Lo sentimos, no existe el veterinario ${id}`})
+    if (veterinarioBDD.email !=  req.body.email)
+    {
+        const veterinarioBDDMail = await Veterinario.findOne({email:req.body.email})
+        if (veterinarioBDDMail)
+        {
+            return res.status(404).json({msg:`Lo sentimos, el existe ya se encuentra registrado`})  
+        }
+    }
+	veterinarioBDD.nombre = req.body.nombre || veterinarioBDD?.nombre
+    veterinarioBDD.apellido = req.body.apellido  || veterinarioBDD?.apellido
+    veterinarioBDD.direccion = req.body.direccion ||  veterinarioBDD?.direccion
+    veterinarioBDD.telefono = req.body.telefono || veterinarioBDD?.telefono
+    veterinarioBDD.email = req.body.email || veterinarioBDD?.email
+    await veterinarioBDD.save()
+    res.status(200).json({msg:"Perfil actualizado correctamente"})
 }
 
 // Metodo para actualizar el password
-const actualizarPassword = (req,res)=>{
-    res.status(200).json({res:'actualizar password de un veterinario registrado'})
+const actualizarPassword = async (req,res)=>{
+    const veterinarioBDD = await Veterinario.findById(req.veterinarioBDD._id)
+    if(!veterinarioBDD) return res.status(404).json({msg:`Lo sentimos, no existe el veterinario ${id}`})
+    const verificarPassword = await veterinarioBDD.matchPassword(req.body.passwordactual)
+    if(!verificarPassword) return res.status(404).json({msg:"Lo sentimos, el password actual no es el correcto"})
+    veterinarioBDD.password = await veterinarioBDD.encrypPassword(req.body.passwordnuevo)
+    await veterinarioBDD.save()
+    res.status(200).json({msg:"Password actualizado correctamente"})
 }
 
 // Metodo para recuperar el password
-const recuperarPassword= (req,res)=>{
-    res.status(200).json({res:'enviar mail recuperación'})
+const recuperarPassword = async(req,res)=>{
+    const {email} = req.body
+    if (Object.values(req.body).includes("")) return res.status(404).json({msg:"Lo sentimos, debes llenar todos los campos"})
+    const veterinarioBDD = await Veterinario.findOne({email})
+    if(!veterinarioBDD) return res.status(404).json({msg:"Lo sentimos, el usuario no se encuentra registrado"})
+    const token = veterinarioBDD.crearToken()
+    veterinarioBDD.token=token
+    await sendMailToRecoveryPassword(email,token)
+    await veterinarioBDD.save()
+    res.status(200).json({msg:"Revisa tu correo electrónico para reestablecer tu cuenta"})
 }
 
 // Metodo para verificar el token
-const comprobarTokenPasword= (req,res)=>{
-    res.status(200).json({res:'verificar token mail'})
+const comprobarTokenPasword = async (req,res)=>{
+    if(!(req.params.token)) return res.status(404).json({msg:"Lo sentimos, no se puede validar la cuenta"})
+    const veterinarioBDD = await Veterinario.findOne({token:req.params.token})
+    if(veterinarioBDD?.token !== req.params.token) return res.status(404).json({msg:"Lo sentimos, no se puede validar la cuenta"})
+    await veterinarioBDD.save()
+    res.status(200).json({msg:"Token confirmado, ya puedes crear tu nuevo password"}) 
 }
 
 // Metodo para crear un nuevo password
-const nuevoPassword= (req,res)=>{
-    res.status(200).json({res:'crear nuevo password'})
+const nuevoPassword = async (req,res)=>{
+    const{password,confirmpassword} = req.body
+    if (Object.values(req.body).includes("")) return res.status(404).json({msg:"Lo sentimos, debes llenar todos los campos"})
+    if(password != confirmpassword) return res.status(404).json({msg:"Lo sentimos, los passwords no coinciden"})
+    const veterinarioBDD = await Veterinario.findOne({token:req.params.token})
+    if(veterinarioBDD?.token !== req.params.token) return res.status(404).json({msg:"Lo sentimos, no se puede validar la cuenta"})
+    veterinarioBDD.token = null
+    veterinarioBDD.password = await veterinarioBDD.encrypPassword(password)
+    await veterinarioBDD.save()
+    res.status(200).json({msg:"Felicitaciones, ya puedes iniciar sesión con tu nuevo password"}) 
 }
 
 // Exportar cada uno de los metodos

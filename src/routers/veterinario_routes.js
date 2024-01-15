@@ -1,5 +1,7 @@
 // Exportar Router de Express
 import {Router} from 'express'
+import verificarAutenticacion from '../middlewares/autenticacion.js'
+import { validacionVeterinario } from '../middlewares/validacionVeterinario.js';
 // Crerar una instancia de Router()
 const router = Router()
 
@@ -23,7 +25,7 @@ import {
 router.post("/login", login);
 
 // Ruta para registro
-router.post("/registro", registro);
+router.post('/registro',validacionVeterinario,registro)
 
 // Ruta para confirmar token
 router.get("/confirmar/:token", confirmEmail);
@@ -40,17 +42,19 @@ router.get("/recuperar-password/:token", comprobarTokenPasword);
 // Ruta para crear un nuevo password
 router.post("/nuevo-password/:token", nuevoPassword);
 
+// Rutas Privadas
+
 // Ruta para acceder al perfil
-router.get("/perfil", perfil);
+router.get("/perfil", verificarAutenticacion,perfil);
 
 // Ruta para actualizar el password
-router.put('/veterinario/actualizarpassword',actualizarPassword)
+router.put('/veterinario/actualizarpassword',verificarAutenticacion,actualizarPassword)
 
 // Ruta para observar el detalle del usuario
-router.get("/veterinario/:id", detalleVeterinario);
+router.get("/veterinario/:id", verificarAutenticacion,detalleVeterinario);
 
 // Ruta para actualizar el perfil
-router.put("/veterinario/:id", actualizarPerfil);
+router.put("/veterinario/:id", verificarAutenticacion,actualizarPerfil);
 
 // Exportar la variable Router
 export default router
